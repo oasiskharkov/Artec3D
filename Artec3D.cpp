@@ -7,6 +7,7 @@
 #include <memory>
 #include <functional>
 #include <climits>
+#include <chrono>
 
 // input file size in bytes 
 constexpr int generatedFileSize = 200 * 1024 * 1024 + 1024; 
@@ -50,7 +51,7 @@ int main(int argc, char* argv[])
       {
          throw std::logic_error("Can't open input binary file to write random values.");
       }*/
- 
+
       const long long fileLenght = getFileLength(argv[1]);
       const long long size = fileLenght % segmentSize == 0 ? fileLenght / segmentSize : fileLenght / segmentSize + 1;
       std::vector<std::vector<unsigned>> values(size);
@@ -79,7 +80,7 @@ int main(int argc, char* argv[])
             }
          }
       }
-      
+
       counter = 0;
       while (counter < size)
       {
@@ -106,7 +107,7 @@ int main(int argc, char* argv[])
       size_t start = 0;
       size_t middle = values.size() / 2;
       size_t end = values.size();
-      
+
       std::vector<unsigned> left(0);
       std::vector<unsigned> right(0);
       std::thread letfThread(&sortSubsequence, std::ref(left), std::cref(values), start, middle);
@@ -116,6 +117,7 @@ int main(int argc, char* argv[])
       rightThread.join();
 
       std::vector<unsigned> result = mergeSortedVectors(left, right);
+
       std::ofstream out(argv[2]);
       if (!out.is_open())
       {
@@ -124,6 +126,7 @@ int main(int argc, char* argv[])
       //std::copy(std::begin(result), std::end(result), std::ostream_iterator<int>(out, " "));
       out.write(reinterpret_cast<char*>(result.data()), sizeof(unsigned) * result.size());
       out.close();
+      
    }
    catch (const std::exception& ex)
    {
@@ -174,13 +177,8 @@ void readValuesFromFile(const std::string& fileName, std::vector<unsigned>& valu
    }
 
    in.seekg(startPosition);
-   for (int i = 0; i < segment / sizeof(unsigned); ++i)
-   {
-      unsigned val;
-      in.read(reinterpret_cast<char*>(&val), sizeof(unsigned));
-      values.push_back(val);
-   }
-   std::cout << std::endl;
+   values.resize(segment / sizeof(unsigned));
+   in.read(reinterpret_cast<char*>(values.data()), sizeof(unsigned) * values.size());
    in.close();
 }
 
