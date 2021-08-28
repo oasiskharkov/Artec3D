@@ -9,23 +9,23 @@
 #include <climits>
 #include <chrono>
 
-// input file size in bytes 
+// input binary file size in bytes 
 constexpr int generatedFileSize = 200 * 1024 * 1024 + 1024; 
 
 // command line arguments count
 constexpr int maxArgumentsCount = 3;
 
 // read segment size
-constexpr int segmentSize = 8 * 1024 * 1024;
+constexpr int segmentSize = 32 * 1024 * 1024;
 
 // max threads count
-constexpr int maxThreadsCount = 10;
+constexpr int maxThreadsCount = 8;
 
 // generate input file
 int generateBinaryFile(const std::string& fileName);
 
 // read values from input file and add them to vector
-void readValuesFromFile(const std::string& fileName, std::vector<unsigned>& values, long long startPosition, long long segment);
+void readValuesFromFile(const std::string& fileName, std::vector<unsigned>& values, const long long startPosition, const long long segment);
 
 // get total file length
 const long long getFileLength(const std::string& fileName);
@@ -34,7 +34,7 @@ const long long getFileLength(const std::string& fileName);
 std::vector<unsigned> mergeSortedVectors(const std::vector<unsigned>& v1, const std::vector<unsigned>& v2);
 
 // sort subsequence
-void sortSubsequence(std::vector<unsigned>& result, const std::vector<std::vector<unsigned>>& values, size_t left, size_t right);
+void sortSubsequence(std::vector<unsigned>& result, const std::vector<std::vector<unsigned>>& values, const size_t left, const size_t right);
 
 int main(int argc, char* argv[])
 {
@@ -53,6 +53,11 @@ int main(int argc, char* argv[])
       }*/
 
       const long long fileLenght = getFileLength(argv[1]);
+      if (!fileLenght)
+      {
+         throw std::logic_error("Input file is empty.");
+      }
+
       const long long size = fileLenght % segmentSize == 0 ? fileLenght / segmentSize : fileLenght / segmentSize + 1;
       std::vector<std::vector<unsigned>> values(size);
       int counter = 0;
@@ -91,7 +96,7 @@ int main(int argc, char* argv[])
             {
                break;
             }
-            threads.emplace_back(std::make_unique<std::thread>(std::bind([&vec = values[counter]](){std::sort(vec.begin(), vec.end()); })));
+            threads.emplace_back(std::make_unique<std::thread>([&vec = values[counter]](){ std::sort(vec.begin(), vec.end()); }));
             counter++;
          }
 
@@ -110,15 +115,15 @@ int main(int argc, char* argv[])
 
       std::vector<unsigned> left(0);
       std::vector<unsigned> right(0);
-      std::thread letfThread(&sortSubsequence, std::ref(left), std::cref(values), start, middle);
-      std::thread rightThread(&sortSubsequence, std::ref(right), std::cref(values), middle, end);
+      std::unique_ptr<std::thread> leftThread = std::make_unique<std::thread>(&sortSubsequence, std::ref(left), std::cref(values), start, middle);
+      std::unique_ptr<std::thread> rightThread = std::make_unique<std::thread>(&sortSubsequence, std::ref(right), std::cref(values), middle, end);
 
-      letfThread.join();
-      rightThread.join();
+      leftThread->join();
+      rightThread->join();
 
       std::vector<unsigned> result = mergeSortedVectors(left, right);
 
-      std::ofstream out(argv[2]);
+      std::ofstream out(argv[2], std::ios::binary);
       if (!out.is_open())
       {
          throw std::ios::failure("Can't open output file to write sorted values.");
@@ -168,7 +173,7 @@ int generateBinaryFile(const std::string& fileName)
    }
 }
 
-void readValuesFromFile(const std::string& fileName, std::vector<unsigned>& values, long long startPosition, long long segment)
+void readValuesFromFile(const std::string& fileName, std::vector<unsigned>& values, const long long startPosition, const long long segment)
 {
    std::fstream in(fileName, std::ios::binary | std::ios::in);
    if (!in.is_open())
@@ -199,12 +204,12 @@ const long long getFileLength(const std::string& fileName)
 
 std::vector<unsigned> mergeSortedVectors(const std::vector<unsigned>& v1, const std::vector<unsigned>& v2)
 {
-   std::vector<unsigned> result;
-   std::merge(v1.begin(), v1.end(), v2.begin(), v2.end(), std::back_inserter(result));
+   std::vector<unsigned> result(v1.size() + v2.size());
+   std::merge(v1.begin(), v1.end(), v2.begin(), v2.end(), result.begin());
    return result;
 }
 
-void sortSubsequence(std::vector<unsigned>& result, const std::vector<std::vector<unsigned>>& values, size_t left, size_t right)
+void sortSubsequence(std::vector<unsigned>& result, const std::vector<std::vector<unsigned>>& values, const size_t left, const size_t right)
 {
    for (size_t i = left; i < right; ++i)
    {
