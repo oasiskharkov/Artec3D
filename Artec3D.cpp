@@ -185,8 +185,15 @@ void mergeAllSortedVectors(std::vector<unsigned>& result, std::vector<std::vecto
    std::unique_ptr<std::thread> leftThread = std::make_unique<std::thread>(&sortSubsequence, std::ref(left), std::cref(values), start, middle);
    std::unique_ptr<std::thread> rightThread = std::make_unique<std::thread>(&sortSubsequence, std::ref(right), std::cref(values), middle, end);
 
-   leftThread->join();
-   rightThread->join();
+   if (leftThread->joinable())
+   {
+      leftThread->join();
+   }
+   if (rightThread->joinable())
+   {
+      rightThread->join();
+   }
+
    values.clear();
 
    result = mergeSortedVectors(left, right);
