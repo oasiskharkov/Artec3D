@@ -165,12 +165,9 @@ int generateBinaryFile(const std::string& fileName)
          out.write(reinterpret_cast<char*>(&value), sizeof(unsigned));
       }
       out.close();
-      return 0;
+      return EXIT_SUCCESS;
    }
-   else
-   {
-      return 1;
-   }
+   return EXIT_FAILURE;
 }
 
 void readValuesFromFile(const std::string& fileName, std::vector<unsigned>& values, const long long startPosition, const long long segment)
