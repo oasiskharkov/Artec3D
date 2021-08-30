@@ -3,7 +3,6 @@
 #include <random>
 #include <thread>
 #include <algorithm>
-#include <mutex>
 #include <memory>
 #include <functional>
 #include <climits>
@@ -19,7 +18,7 @@ constexpr int maxArgumentsCount = 3;
 constexpr int segmentSize = 32 * 1024 * 1024;
 
 // max threads count
-constexpr int maxThreadsCount = 8;
+constexpr int maxThreadsCount = 16;
 
 // generate input file
 int generateBinaryFile(const std::string& fileName);
@@ -94,7 +93,7 @@ int main(int argc, char* argv[])
 
    auto end = std::chrono::steady_clock::now();
    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end - begin);
-   std::cout << "Total time: " << seconds.count() << std::endl;
+   std::cout << "Total time: " << seconds.count() << "sec." << std::endl;
   
    return EXIT_SUCCESS;
 }
