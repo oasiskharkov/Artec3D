@@ -56,7 +56,7 @@ int main(int argc, char* argv[])
          throw std::logic_error("Incorrect arguments count");
       }
 
-      //if (generateBinaryFile("input"))
+      //if (generateBinaryFile(argv[1]))
       //{
       //   throw std::logic_error("Can't open input binary file to write random values.");
       //}
