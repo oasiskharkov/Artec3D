@@ -18,10 +18,10 @@ constexpr int generatedFileSize = 2097153024;
 constexpr int maxArgumentsCount = 3;
 
 // read segment size in bytes
-constexpr int segmentSize = 32 * 1024 * 1024;
+constexpr int segmentSize = 16 * 1024 * 1024;
 
 // max threads count
-constexpr int maxThreadsCount = 4;
+constexpr int maxThreadsCount = 8;
 
 // mutex
 std::mutex mtx;
@@ -40,7 +40,8 @@ const long long getFileLength(const std::string& fileName);
 void mergeTwoFilesWithSortedValues(std::string resultFileName, std::string fileName1, std::string fileName2);
 
 // create binary files with sorted values from initial binary file
-void createFilesWithSortedValuesFromBinaryFile(const std::string& fileName, std::deque<std::string>& fileNames, const long long fileLength);
+void createFilesWithSortedValuesFromBinaryFile(const std::string& fileName, std::deque<std::string>& fileNames, 
+   const long long fileLength);
 
 // merge all files with sorted values to result sorted binary file
 void mergeAllFilesWithSortedValues(const std::string& fileName, std::deque<std::string>& fileNames);
@@ -221,7 +222,8 @@ void mergeAllFilesWithSortedValues(const std::string& fileName, std::deque<std::
    auto counter = 0;
    while (fileNames.size() > 1)
    {
-      auto threadsCount = (int)fileNames.size() / 2 > maxThreadsCount ? maxThreadsCount : (int)fileNames.size() / 2;
+      const auto halfSize = static_cast<int>(fileNames.size()) / 2;
+      const auto threadsCount =  halfSize > maxThreadsCount ? maxThreadsCount : halfSize;
       std::vector<std::unique_ptr<std::thread>> threads;
       for (auto i = 0; i < threadsCount; ++i)
       {
