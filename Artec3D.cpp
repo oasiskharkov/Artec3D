@@ -10,6 +10,7 @@
 #include <mutex>
 #include <cstdio>
 #include <deque>
+#include <vector>
 
 // input binary file size in bytes 
 constexpr int generatedFileSize = 2097153024;
