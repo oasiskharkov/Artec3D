@@ -19,10 +19,10 @@ constexpr int generatedFileSize = 2097153024;
 constexpr int maxArgumentsCount = 3;
 
 // read segment size in bytes
-constexpr int segmentSize = 16 * 1024 * 1024;
+constexpr int segmentSize = 18 * 1024 * 1024;
 
 // max threads count
-constexpr int maxThreadsCount = 8;
+constexpr int maxThreadsCount = 7;
 
 // mutex
 std::mutex mtx;
@@ -55,25 +55,34 @@ int main(int argc, char* argv[])
    {
       if (argc != maxArgumentsCount)
       {
-         throw std::logic_error("Incorrect arguments count");
+         throw std::logic_error("Incorrect arguments count.");
       }
 
-      //if (generateBinaryFile(argv[1]))
+      std::string inputFileName = argv[1];
+      std::string outputFileName = argv[2];
+
+      //if (generateBinaryFile(inputFileName))
       //{
       //   throw std::logic_error("Can't open input binary file to write random values.");
       //}
 
-      const long long fileLength = getFileLength(argv[1]);
-      if (!fileLength)
+      const long long inputFileLength = getFileLength(inputFileName);
+      if (!inputFileLength)
       {
          throw std::logic_error("Input file is empty.");
       }
-      const long long size = fileLength % segmentSize == 0 ? fileLength / segmentSize : fileLength / segmentSize + 1;
+      const long long size = inputFileLength % segmentSize == 0 ? inputFileLength / segmentSize : inputFileLength / segmentSize + 1;
       
       std::deque<std::string> fileNames;
-      createFilesWithSortedValuesFromBinaryFile(argv[1], fileNames, fileLength);
+      createFilesWithSortedValuesFromBinaryFile(inputFileName, fileNames, inputFileLength);
 
-      mergeAllFilesWithSortedValues(argv[2], fileNames);
+      mergeAllFilesWithSortedValues(outputFileName, fileNames);
+
+      const long long outputfileLength = getFileLength(outputFileName);
+      if (inputFileLength != outputfileLength)
+      {
+         throw std::logic_error("Input binary file was sorted incorrectly.");
+      }
    }
    catch (const std::exception& ex)
    {
