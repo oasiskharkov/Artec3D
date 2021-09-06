@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <deque>
 #include <vector>
+#include <iomanip>
 
 // input binary file size in bytes 
 constexpr int generatedFileSize = 2097153024;
@@ -61,10 +62,10 @@ int main(int argc, char* argv[])
       std::string inputFileName = argv[1];
       std::string outputFileName = argv[2];
 
-      //if (generateBinaryFile(inputFileName))
-      //{
-      //   throw std::logic_error("Can't open input binary file to write random values.");
-      //}
+      /*if (generateBinaryFile(inputFileName))
+      {
+         throw std::logic_error("Can't open input binary file to write random values.");
+      }*/
 
       const long long inputFileLength = getFileLength(inputFileName);
       if (!inputFileLength)
@@ -96,8 +97,9 @@ int main(int argc, char* argv[])
    }
 
    auto end = std::chrono::steady_clock::now();
-   auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end - begin);
-   std::cout << "Total time: " << seconds.count() << "sec." << std::endl;
+   auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
+   std::cout.precision(6);
+   std::cout << "Total time: " << milliseconds.count() / 1000.0 << "sec." << std::endl;
 
    return EXIT_SUCCESS;
 }
@@ -124,30 +126,41 @@ int generateBinaryFile(const std::string& fileName)
 void readValuesFromFileSortThemAndWriteToOtherFile(const std::string& fileName, std::deque<std::string>& fileNames,
    const long long startPosition, const long long segment, const int counter)
 {
-   std::fstream in(fileName, std::ios::binary | std::ios::in);
-   if (!in.is_open())
+   try
    {
-      throw std::logic_error("Can't open input file to read values.");
+      std::fstream in(fileName, std::ios::binary | std::ios::in);
+      if (!in.is_open())
+      {
+         throw std::logic_error("Can't open input file to read values.");
+      }
+
+      in.seekg(startPosition);
+      std::vector<unsigned> values(segment / sizeof(unsigned));
+      in.read(reinterpret_cast<char*>(values.data()), sizeof(unsigned) * values.size());
+      in.close();
+
+      std::sort(values.begin(), values.end());
+      std::string sorteValuesFileName = "file" + std::to_string(counter);
+
+      std::ofstream out(sorteValuesFileName, std::ios::binary);
+      if (!out.is_open())
+      {
+         throw std::ios::failure("Can't open output file to write sorted values.");
+      }
+      out.write(reinterpret_cast<const char*>(values.data()), sizeof(unsigned) * values.size());
+      out.close();
+
+      std::unique_lock<std::mutex> ul(mtx);
+      fileNames.push_back(sorteValuesFileName);
    }
-
-   in.seekg(startPosition);
-   std::vector<unsigned> values(segment / sizeof(unsigned));
-   in.read(reinterpret_cast<char*>(values.data()), sizeof(unsigned) * values.size());
-   in.close();
-
-   std::sort(values.begin(), values.end());
-   std::string sorteValuesFileName = "file" + std::to_string(counter);
-
-   std::ofstream out(sorteValuesFileName, std::ios::binary);
-   if (!out.is_open())
+   catch (const std::exception& ex)
    {
-      throw std::ios::failure("Can't open output file to write sorted values.");
+      std::cerr << ex.what() << std::endl;
    }
-   out.write(reinterpret_cast<const char*>(values.data()), sizeof(unsigned) * values.size());
-   out.close();
-
-   std::unique_lock<std::mutex> ul(mtx);
-   fileNames.push_back(sorteValuesFileName);
+   catch (...)
+   {
+      std::cerr << "Something goes wrong." << std::endl;
+   }
 }
 
 const long long getFileLength(const std::string& fileName)
@@ -167,63 +180,74 @@ const long long getFileLength(const std::string& fileName)
 
 void mergeTwoFilesWithSortedValues(std::string resultFileName, std::string fileName1, std::string fileName2)
 {
-   std::string file1 = fileName1;
-   std::string file2 = fileName2;
-
-   std::fstream in1(fileName1, std::ios::binary | std::ios::in);
-   std::fstream in2(fileName2, std::ios::binary | std::ios::in);
-   std::fstream out(resultFileName, std::ios::binary | std::ios::out);
-
-   if (!in1.is_open())
+   try
    {
-      throw std::logic_error("Can't open first input file to merge.");
-   }
+      std::string file1 = fileName1;
+      std::string file2 = fileName2;
 
-   if (!in2.is_open())
-   {
-      throw std::logic_error("Can't open second input file to merge.");
-   }
+      std::fstream in1(fileName1, std::ios::binary | std::ios::in);
+      std::fstream in2(fileName2, std::ios::binary | std::ios::in);
+      std::fstream out(resultFileName, std::ios::binary | std::ios::out);
 
-   if (!out.is_open())
-   {
-      throw std::logic_error("Can't open output file to save results.");
-   }
-
-   unsigned x, y;
-   in1.read(reinterpret_cast<char*>(&x), sizeof(unsigned));
-   in2.read(reinterpret_cast<char*>(&y), sizeof(unsigned));
-   while (in1 && in2)
-   {
-      if (x <= y)
+      if (!in1.is_open())
       {
-         out.write(reinterpret_cast<char*>(&x), sizeof(unsigned));
-         in1.read(reinterpret_cast<char*>(&x), sizeof(unsigned));
+         throw std::logic_error("Can't open first input file to merge.");
       }
-      else
-      {
-         out.write(reinterpret_cast<char*>(&y), sizeof(unsigned));
-         in2.read(reinterpret_cast<char*>(&y), sizeof(unsigned));
-      }
-   }
 
-   while (in1)
-   {
+      if (!in2.is_open())
+      {
+         throw std::logic_error("Can't open second input file to merge.");
+      }
+
+      if (!out.is_open())
+      {
+         throw std::logic_error("Can't open output file to save results.");
+      }
+
+      unsigned x, y;
       in1.read(reinterpret_cast<char*>(&x), sizeof(unsigned));
-      out.write(reinterpret_cast<char*>(&x), sizeof(unsigned));
-   }
-
-   while (in2)
-   {
       in2.read(reinterpret_cast<char*>(&y), sizeof(unsigned));
-      out.write(reinterpret_cast<char*>(&y), sizeof(unsigned));
+      while (in1 && in2)
+      {
+         if (x <= y)
+         {
+            out.write(reinterpret_cast<char*>(&x), sizeof(unsigned));
+            in1.read(reinterpret_cast<char*>(&x), sizeof(unsigned));
+         }
+         else
+         {
+            out.write(reinterpret_cast<char*>(&y), sizeof(unsigned));
+            in2.read(reinterpret_cast<char*>(&y), sizeof(unsigned));
+         }
+      }
+
+      while (in1)
+      {
+         in1.read(reinterpret_cast<char*>(&x), sizeof(unsigned));
+         out.write(reinterpret_cast<char*>(&x), sizeof(unsigned));
+      }
+
+      while (in2)
+      {
+         in2.read(reinterpret_cast<char*>(&y), sizeof(unsigned));
+         out.write(reinterpret_cast<char*>(&y), sizeof(unsigned));
+      }
+
+      in1.close();
+      in2.close();
+      out.close();
+
+      remove(fileName1.c_str());
+      remove(fileName2.c_str());
    }
-
-   in1.close();
-   in2.close();
-   out.close();
-
-   remove(fileName1.c_str());
-   remove(fileName2.c_str());
+   catch (const std::exception& ex)
+   {
+      std::cerr << ex.what() << std::endl;
+   }
+   catch (...)
+   {
+      std::cerr << "Something goes wrong." << std::endl;
+   }
 }
 
 void mergeAllFilesWithSortedValues(const std::string& fileName, std::deque<std::string>& fileNames)
