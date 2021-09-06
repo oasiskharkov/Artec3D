@@ -155,10 +155,12 @@ void readValuesFromFileSortThemAndWriteToOtherFile(const std::string& fileName, 
    }
    catch (const std::exception& ex)
    {
+      std::cerr << "Error in thread: " << std::this_thread::get_id() << std::endl;
       std::cerr << ex.what() << std::endl;
    }
    catch (...)
    {
+      std::cerr << "Error in thread: " << std::this_thread::get_id() << std::endl;
       std::cerr << "Something goes wrong." << std::endl;
    }
 }
@@ -242,10 +244,12 @@ void mergeTwoFilesWithSortedValues(std::string resultFileName, std::string fileN
    }
    catch (const std::exception& ex)
    {
+      std::cerr << "Error in thread: " << std::this_thread::get_id() << std::endl;
       std::cerr << ex.what() << std::endl;
    }
    catch (...)
    {
+      std::cerr << "Error in thread: " << std::this_thread::get_id() << std::endl;
       std::cerr << "Something goes wrong." << std::endl;
    }
 }
