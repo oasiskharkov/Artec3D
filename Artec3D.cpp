@@ -7,45 +7,46 @@
 #include <functional>
 #include <climits>
 #include <chrono>
+#include <mutex>
+#include <cstdio>
+#include <deque>
+#include <vector>
+#include <iomanip>
 
 // input binary file size in bytes 
-constexpr int generatedFileSize = 200 * 1024 * 1024 + 1024; 
+constexpr int generatedFileSize = 2097153024;
 
 // command line arguments count
 constexpr int maxArgumentsCount = 3;
 
-// read segment size
-constexpr int segmentSize = 32 * 1024 * 1024;
+// read segment size in bytes
+constexpr int segmentSize = 18 * 1024 * 1024;
 
 // max threads count
-constexpr int maxThreadsCount = 16;
+constexpr int maxThreadsCount = 7;
 
-// generate input file
+// mutex
+std::mutex mtx;
+
+// generate input binary file
 int generateBinaryFile(const std::string& fileName);
 
-// read values from input file and add them to vector
-void readValuesFromFile(const std::string& fileName, std::vector<unsigned>& values, const long long startPosition, const long long segment);
+// read unsorted values from input binary file and add them to vector, sort vector and write it to other binary file
+void readValuesFromFileSortThemAndWriteToOtherFile(const std::string& fileName, std::deque<std::string>& fileNames,
+   const long long startPosition, const long long segment, const int counter);
 
-// get total file length
+// get total binary file length
 const long long getFileLength(const std::string& fileName);
 
-// merge two sorted vectors
-std::vector<unsigned> mergeSortedVectors(const std::vector<unsigned>& v1, const std::vector<unsigned>& v2);
+// merge two binary files with sorted values
+void mergeTwoFilesWithSortedValues(std::string resultFileName, std::string fileName1, std::string fileName2);
 
-// fill vectors from input binary file
-void fillVectorsFromFile(const std::string& fileName, std::vector<std::vector<unsigned>>& values, const long long fileLength);
+// create binary files with sorted values from initial binary file
+void createFilesWithSortedValuesFromBinaryFile(const std::string& fileName, std::deque<std::string>& fileNames, 
+   const long long fileLength);
 
-// sort subsequence
-void sortSubsequence(std::vector<unsigned>& result, const std::vector<std::vector<unsigned>>& values, const size_t left, const size_t right);
-
-// write sorted values to binary file
-void writeSortedVectorToFile(const std::string& fileName, const std::vector<unsigned>& result);
-
-// merge all sorted vectors to result sorted vector
-void mergeAllSortedVectors(std::vector<unsigned>& result, std::vector<std::vector<unsigned>>& values);
-
-// sort all vectors
-void sortVectors(std::vector<std::vector<unsigned>>& values);
+// merge all files with sorted values to result sorted binary file
+void mergeAllFilesWithSortedValues(const std::string& fileName, std::deque<std::string>& fileNames);
 
 int main(int argc, char* argv[])
 {
@@ -55,30 +56,34 @@ int main(int argc, char* argv[])
    {
       if (argc != maxArgumentsCount)
       {
-         throw std::logic_error("Incorrect arguments count");
+         throw std::logic_error("Incorrect arguments count.");
       }
 
-      /*if (generateBinaryFile(argv[1]))
+      std::string inputFileName = argv[1];
+      std::string outputFileName = argv[2];
+
+      /*if (generateBinaryFile(inputFileName))
       {
          throw std::logic_error("Can't open input binary file to write random values.");
       }*/
 
-      const long long fileLength = getFileLength(argv[1]);
-      if (!fileLength)
+      const long long inputFileLength = getFileLength(inputFileName);
+      if (!inputFileLength)
       {
          throw std::logic_error("Input file is empty.");
       }
+      const long long size = inputFileLength % segmentSize == 0 ? inputFileLength / segmentSize : inputFileLength / segmentSize + 1;
+      
+      std::deque<std::string> fileNames;
+      createFilesWithSortedValuesFromBinaryFile(inputFileName, fileNames, inputFileLength);
 
-      const long long size = fileLength % segmentSize == 0 ? fileLength / segmentSize : fileLength / segmentSize + 1;
-      std::vector<std::vector<unsigned>> values(size);
-      fillVectorsFromFile(argv[1], values, fileLength);
+      mergeAllFilesWithSortedValues(outputFileName, fileNames);
 
-      sortVectors(values);
-
-      std::vector<unsigned> result;
-      mergeAllSortedVectors(result, values);
-
-      writeSortedVectorToFile(argv[2], result);
+      const long long outputfileLength = getFileLength(outputFileName);
+      if (inputFileLength != outputfileLength)
+      {
+         throw std::logic_error("Input binary file was sorted incorrectly.");
+      }
    }
    catch (const std::exception& ex)
    {
@@ -92,9 +97,10 @@ int main(int argc, char* argv[])
    }
 
    auto end = std::chrono::steady_clock::now();
-   auto seconds = std::chrono::duration_cast<std::chrono::seconds>(end - begin);
-   std::cout << "Total time: " << seconds.count() << "sec." << std::endl;
-  
+   auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin);
+   std::cout.precision(6);
+   std::cout << "Total time: " << milliseconds.count() / 1000.0 << "sec." << std::endl;
+
    return EXIT_SUCCESS;
 }
 
@@ -105,8 +111,8 @@ int generateBinaryFile(const std::string& fileName)
    {
       std::random_device rd;
       std::mt19937 mt(rd());
-      std::uniform_int_distribution<unsigned> dist(0, USHRT_MAX);
-      for (int i = 0; i < generatedFileSize / sizeof(unsigned); ++i)
+      std::uniform_int_distribution<unsigned> dist(0, UINT_MAX);
+      for (auto i = 0; i < generatedFileSize / sizeof(unsigned); ++i)
       {
          unsigned value = dist(mt);
          out.write(reinterpret_cast<char*>(&value), sizeof(unsigned));
@@ -117,18 +123,46 @@ int generateBinaryFile(const std::string& fileName)
    return EXIT_FAILURE;
 }
 
-void readValuesFromFile(const std::string& fileName, std::vector<unsigned>& values, const long long startPosition, const long long segment)
+void readValuesFromFileSortThemAndWriteToOtherFile(const std::string& fileName, std::deque<std::string>& fileNames,
+   const long long startPosition, const long long segment, const int counter)
 {
-   std::fstream in(fileName, std::ios::binary | std::ios::in);
-   if (!in.is_open())
+   try
    {
-      throw std::logic_error("Can't open input file to read values.");
-   }
+      std::fstream in(fileName, std::ios::binary | std::ios::in);
+      if (!in.is_open())
+      {
+         throw std::logic_error("Can't open input file to read values.");
+      }
 
-   in.seekg(startPosition);
-   values.resize(segment / sizeof(unsigned));
-   in.read(reinterpret_cast<char*>(values.data()), sizeof(unsigned) * values.size());
-   in.close();
+      in.seekg(startPosition);
+      std::vector<unsigned> values(segment / sizeof(unsigned));
+      in.read(reinterpret_cast<char*>(values.data()), sizeof(unsigned) * values.size());
+      in.close();
+
+      std::sort(values.begin(), values.end());
+      std::string sorteValuesFileName = "file" + std::to_string(counter);
+
+      std::ofstream out(sorteValuesFileName, std::ios::binary);
+      if (!out.is_open())
+      {
+         throw std::ios::failure("Can't open output file to write sorted values.");
+      }
+      out.write(reinterpret_cast<const char*>(values.data()), sizeof(unsigned) * values.size());
+      out.close();
+
+      std::unique_lock<std::mutex> ul(mtx);
+      fileNames.push_back(sorteValuesFileName);
+   }
+   catch (const std::exception& ex)
+   {
+      std::cerr << "Error in thread: " << std::this_thread::get_id() << std::endl;
+      std::cerr << ex.what() << std::endl;
+   }
+   catch (...)
+   {
+      std::cerr << "Error in thread: " << std::this_thread::get_id() << std::endl;
+      std::cerr << "Something goes wrong." << std::endl;
+   }
 }
 
 const long long getFileLength(const std::string& fileName)
@@ -146,71 +180,98 @@ const long long getFileLength(const std::string& fileName)
    return length;
 }
 
-std::vector<unsigned> mergeSortedVectors(const std::vector<unsigned>& v1, const std::vector<unsigned>& v2)
+void mergeTwoFilesWithSortedValues(std::string resultFileName, std::string fileName1, std::string fileName2)
 {
-   std::vector<unsigned> result(v1.size() + v2.size());
-   std::merge(v1.begin(), v1.end(), v2.begin(), v2.end(), result.begin());
-   return result;
-}
-
-void sortSubsequence(std::vector<unsigned>& result, const std::vector<std::vector<unsigned>>& values, const size_t left, const size_t right)
-{
-   for (size_t i = left; i < right; ++i)
+   try
    {
-      result = mergeSortedVectors(result, values[i]);
-   }
-}
+      std::string file1 = fileName1;
+      std::string file2 = fileName2;
 
-void writeSortedVectorToFile(const std::string& fileName, const std::vector<unsigned>& result)
-{
-   std::ofstream out(fileName, std::ios::binary);
-   if (!out.is_open())
-   {
-      throw std::ios::failure("Can't open output file to write sorted values.");
-   }
-   //std::copy(std::begin(result), std::end(result), std::ostream_iterator<int>(out, " "));
-   out.write(reinterpret_cast<const char*>(result.data()), sizeof(unsigned) * result.size());
-   out.close();
-}
+      std::fstream in1(fileName1, std::ios::binary | std::ios::in);
+      std::fstream in2(fileName2, std::ios::binary | std::ios::in);
+      std::fstream out(resultFileName, std::ios::binary | std::ios::out);
 
-void mergeAllSortedVectors(std::vector<unsigned>& result, std::vector<std::vector<unsigned>>& values)
-{
-   size_t start = 0;
-   size_t middle = values.size() / 2;
-   size_t end = values.size();
-
-   std::vector<unsigned> left(0);
-   std::vector<unsigned> right(0);
-   std::unique_ptr<std::thread> leftThread = std::make_unique<std::thread>(&sortSubsequence, std::ref(left), std::cref(values), start, middle);
-   std::unique_ptr<std::thread> rightThread = std::make_unique<std::thread>(&sortSubsequence, std::ref(right), std::cref(values), middle, end);
-
-   if (leftThread->joinable())
-   {
-      leftThread->join();
-   }
-   if (rightThread->joinable())
-   {
-      rightThread->join();
-   }
-
-   values.clear();
-
-   result = mergeSortedVectors(left, right);
-}
-
-void sortVectors(std::vector<std::vector<unsigned>>& values)
-{
-   int counter = 0;
-   while (counter < values.size())
-   {
-      std::vector<std::unique_ptr<std::thread>> threads;
-      for (int i = 0; i < maxThreadsCount; ++i)
+      if (!in1.is_open())
       {
-         if (counter == values.size())
+         throw std::logic_error("Can't open first input file to merge.");
+      }
+
+      if (!in2.is_open())
+      {
+         throw std::logic_error("Can't open second input file to merge.");
+      }
+
+      if (!out.is_open())
+      {
+         throw std::logic_error("Can't open output file to save results.");
+      }
+
+      unsigned x, y;
+      in1.read(reinterpret_cast<char*>(&x), sizeof(unsigned));
+      in2.read(reinterpret_cast<char*>(&y), sizeof(unsigned));
+      while (in1 && in2)
+      {
+         if (x <= y)
          {
-            break;
+            out.write(reinterpret_cast<char*>(&x), sizeof(unsigned));
+            in1.read(reinterpret_cast<char*>(&x), sizeof(unsigned));
          }
-         threads.emplace_back(std::make_unique<std::thread>([&vec = values[counter]](){ std::sort(vec.begin(), vec.end()); }));
+         else
+         {
+            out.write(reinterpret_cast<char*>(&y), sizeof(unsigned));
+            in2.read(reinterpret_cast<char*>(&y), sizeof(unsigned));
+         }
+      }
+
+      while (in1)
+      {
+         in1.read(reinterpret_cast<char*>(&x), sizeof(unsigned));
+         out.write(reinterpret_cast<char*>(&x), sizeof(unsigned));
+      }
+
+      while (in2)
+      {
+         in2.read(reinterpret_cast<char*>(&y), sizeof(unsigned));
+         out.write(reinterpret_cast<char*>(&y), sizeof(unsigned));
+      }
+
+      in1.close();
+      in2.close();
+      out.close();
+
+      remove(fileName1.c_str());
+      remove(fileName2.c_str());
+   }
+   catch (const std::exception& ex)
+   {
+      std::cerr << "Error in thread: " << std::this_thread::get_id() << std::endl;
+      std::cerr << ex.what() << std::endl;
+   }
+   catch (...)
+   {
+      std::cerr << "Error in thread: " << std::this_thread::get_id() << std::endl;
+      std::cerr << "Something goes wrong." << std::endl;
+   }
+}
+
+void mergeAllFilesWithSortedValues(const std::string& fileName, std::deque<std::string>& fileNames)
+{
+   std::string mergedFileName;
+   auto counter = 0;
+   while (fileNames.size() > 1)
+   {
+      const auto halfSize = static_cast<int>(fileNames.size()) / 2;
+      const auto threadsCount =  halfSize > maxThreadsCount ? maxThreadsCount : halfSize;
+      std::vector<std::unique_ptr<std::thread>> threads;
+      for (auto i = 0; i < threadsCount; ++i)
+      {
+         mergedFileName = "merged_file_" + std::to_string(counter);
+         std::string fileName1 = fileNames.front();
+         fileNames.pop_front();
+         std::string fileName2 = fileNames.front();
+         fileNames.pop_front();
+         fileNames.push_back(mergedFileName);
+         threads.emplace_back(std::make_unique<std::thread>(&mergeTwoFilesWithSortedValues, mergedFileName, fileName1, fileName2));
          counter++;
       }
 
@@ -222,23 +283,31 @@ void sortVectors(std::vector<std::vector<unsigned>>& values)
          }
       }
    }
+   
+   remove(fileName.c_str());
+   auto result = rename(mergedFileName.c_str(), fileName.c_str());
+   if (result)
+   {
+      throw std::logic_error("Can't create binary output file with sorted values.");
+   }
 }
 
-void fillVectorsFromFile(const std::string& fileName, std::vector<std::vector<unsigned>>& values, const long long fileLength)
+void createFilesWithSortedValuesFromBinaryFile(const std::string& fileName, std::deque<std::string>& fileNames, const long long fileLength)
 {
-   int counter = 0;
+   auto counter = 0;
    long long startPosition = 0;
    while (startPosition < fileLength)
    {
       std::vector<std::unique_ptr<std::thread>> threads;
-      for (int i = 0; i < maxThreadsCount; ++i)
+      for (auto i = 0; i < maxThreadsCount; ++i)
       {
          if (startPosition >= fileLength)
          {
             break;
          }
          const long long segment = fileLength - startPosition >= segmentSize ? segmentSize : fileLength - startPosition;
-         threads.emplace_back(std::make_unique<std::thread>(std::bind(&readValuesFromFile, std::cref(fileName), std::ref(values[counter]), startPosition, segment)));
+         threads.emplace_back(std::make_unique<std::thread>(std::bind(&readValuesFromFileSortThemAndWriteToOtherFile,
+            std::cref(fileName), std::ref(fileNames), startPosition, segment, counter)));
          startPosition += segment;
          counter++;
       }
